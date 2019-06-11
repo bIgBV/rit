@@ -65,15 +65,13 @@ impl Database {
         Database { path }
     }
 
-    pub fn store<T, E>(&self, object: T) -> Result<(), Error>
+    pub fn store<T, E>(&self, object: T) -> Result<(), DbError>
     where
         T: Store<E>,
         E: Into<Error>,
     {
         let otype = object.otype().clone();
-        let data = object
-            .serialize()
-            .map_err(|e| Box::new(DbError::SerializeError(e)))?;
+        let data = object.serialize().map_err(|e| DbError::SerializeError(e))?;
 
         let mut content = format!("{} {}\0", otype, data.len()).into_bytes();
 
@@ -85,7 +83,7 @@ impl Database {
         let oid = hasher.result_str().clone();
 
         self.write_object(oid, content)
-            .map_err(|e| Box::new(DbError::IoError(e)))
+            .map_err(|e| DbError::IoError(e))
     }
 
     fn write_object(&self, oid: String, content: Vec<u8>) -> std::io::Result<()> {
