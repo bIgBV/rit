@@ -44,11 +44,12 @@ impl<'a> Store<TreeError> for Tree<'a> {
 
     fn serialize(&self) -> SerializeResult<Vec<u8>> {
         self.entries[..].sort_by_key(|entry| entry.name);
-        let entries: Vec<String> = self
+        
+        self
             .entries
             .iter()
             .map(|entry| format!("{:<7}{}\0{}", MODE, entry.name.display(), entry.oid))
-            .collect();
-        Ok(entries[..].join("").into_bytes())
+            .collect::<String>()
+            .into_bytes()
     }
 }

@@ -17,6 +17,7 @@ use tree::Tree;
 use workspace::Workspace;
 
 type Error = Box<dyn std::error::Error>;
+const APP_NAME: &'static str = env!('CARGO_PKG_NAME');
 
 fn run_app() -> Result<(), Error> {
     let args = env::args();
@@ -30,7 +31,7 @@ fn run_app() -> Result<(), Error> {
                 fs::create_dir_all(git_dir.join(dir))?;
             }
 
-            println!("Initialized empty rit repository at {:?}", git_dir);
+            println!("Initialized empty {} repository at {:?}", APP_NAME, git_dir);
         }
         Some("commit") => {
             let cur_dir = env::current_dir()?;
@@ -40,20 +41,21 @@ fn run_app() -> Result<(), Error> {
             let workspace = Workspace::new(cur_dir);
             let database = Database::new(db_dir);
 
-            let entries = vec![];
+            let entries = workspace.list_files()?
+                .iter()
+                .filter(|path| path.is_dir())
+                .map(|path| {
+                    info!("Handling path: {:?}", path);
 
-            for path in workspace.list_files()?.iter() {
-                info!("Handling path: {:?}", path);
-                // TODO: Handle directories
-                if path.is_dir() {
-                    continue;
-                }
-                let data = workspace.read_file(path.to_path_buf())?;
-                let blob = Blob::new(data);
+                    let data = workspace.read_file(path.to_path_buf())?;
+                    let blob = Blob::new(data);
 
-                database.store(blob)?;
-                entries.push(Entry::new(path, blob.oid));
-            }
+                    // Don't do side-effects in map if you can help it
+                    database.store(blob);
+                    Entry::new(path, blob.oid);
+                })
+                .filter_map(Result::ok)
+                .collect();
 
             let tree = Tree::new(entries);
 
@@ -62,7 +64,7 @@ fn run_app() -> Result<(), Error> {
             info!("Tree: {}", tree.oid);
         }
         Some(val) => {
-            eprintln!("rit: {} is not a rit command", val);
+            eprintln!("{appname}: {} is not a {appname} command", val, appname = APP_NAME);
         }
         _ => eprintln!("Please pass a command"),
     }

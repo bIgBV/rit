@@ -30,6 +30,14 @@ pub enum DbError {
     IoError(std::io::Error),
 }
 
+// #[derive(Debug, Display)]
+// pub enum DbError {
+//     #[display(fmt = "Serialization error: {}", e.description())]
+//     SerializeError(Error),
+//     #[display(fmt  =" error: {}", e.description())]
+//     IoError(std::io::Error),
+// }
+
 impl StdError for DbError {
     fn description(&self) -> &str {
         format!("{}", *self).as_str()
@@ -71,7 +79,7 @@ impl Database {
         E: Into<Error>,
     {
         let otype = object.otype().clone();
-        let data = object.serialize().map_err(|e| DbError::SerializeError(e))?;
+        let data = object.serialize().map_err(|serializiation_err| DbError::SerializeError(serializiation_err.into()))?;
 
         let mut content = format!("{} {}\0", otype, data.len()).into_bytes();
 
@@ -80,64 +88,66 @@ impl Database {
         let mut hasher = Sha1::new();
         hasher.input(&content);
 
-        let oid = hasher.result_str().clone();
+        // Not actualy a Result<String, Error>, just a String
+        let oid = hasher.result_str();
 
-        self.write_object(oid, content)
-            .map_err(|e| DbError::IoError(e))
+        self.write_object(oid, &content)
+            .map_err(|write_err| DbError::IoError(write_err))
     }
 
-    fn write_object(&self, oid: String, content: Vec<u8>) -> std::io::Result<()> {
-        let object_path = self.path.join(&oid[0..2]);
-        let object_path = object_path.join(&oid[2..]);
-        let dirname = self.path.join(&oid[0..2]);
-        let temp_path = dirname.join(self.generate_temp_name());
+    fn write_object(&self, oid: &str, content: &[u8]) -> Result<(), Error> {
+        let (object_path, dirname, temp_path) = destructure_oid(oid);
 
-        let result = OpenOptions::new()
+        if (path_exists(dirname).is_err()) {
+            fs::create_dir_all(dirname)?;
+        }
+
+        match OpenOptions::new()
             .write(true)
             .read(true)
             .create(true)
-            .open(temp_path.clone());
+            .open(temp_path.clone()) {
+                Ok(file) => {
+                    let mut e = ZlibEncoder::new(Vec::new(), Compression::fast());
 
-        let mut file = None;
+                    e.write_all(content)?;
+                    let compressed = e.finish()?;
 
-        if result.is_err() {
-            let err = result.unwrap_err();
-            if err.kind() == std::io::ErrorKind::NotFound {
-                fs::create_dir_all(dirname)?;
+                    file.write(&compressed)?;
+                    file.sync_all()?;
 
-                let temp = OpenOptions::new()
-                    .write(true)
-                    .read(true)
-                    .create(true)
-                    .open(temp_path.clone())?;
+                    fs::rename(temp_path, object_path)?;
+                    Ok(())
+                },
+                Err(err) => {
+                    error!("Error opening file: {}", err);
 
-                file = Some(temp);
-            } else {
-                error!("Error opening tem file: {}", err);
-                return Err(err);
+                    Err(err)
+                }
             }
-        } else {
-            // Should never fail
-            file = Some(result.unwrap());
-        }
+    }
+}
 
-        let mut file = file.unwrap();
 
-        let mut e = ZlibEncoder::new(Vec::new(), Compression::fast());
+fn generate_temp_name() -> String {
+    let rand_name: [char; 6] = thread_rng().gen();
+    let rand_name: String = rand_name[..].iter().collect();
+    format!("tmp_obj_{:?}", rand_name)
+}
 
-        e.write_all(&content)?;
-        let compressed = e.finish()?;
+fn destructure(oid: &str) -> () {
+    let object_path = self.path.join(&oid[0..2]);
+    let object_path = object_path.join(&oid[2..]);
+    let dirname = self.path.join(&oid[0..2]);
+    let temp_path = dirname.join(self.generate_temp_name());
 
-        file.write(&compressed)?;
-        file.sync_all()?;
+    (object_path, dirname, temp_path)
+}
 
-        fs::rename(temp_path, object_path)?;
-        Ok(())
+fn checkPath(path: PathBuf) -> bool {
+    if let Ok(_) = fs::metadata(path) {
+        true
     }
 
-    fn generate_temp_name(&self) -> String {
-        let rand_name: [char; 6] = thread_rng().gen();
-        let rand_name: String = rand_name[..].iter().collect();
-        format!("tmp_obj_{:?}", rand_name)
-    }
+    false
 }
