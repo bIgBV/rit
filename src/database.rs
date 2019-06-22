@@ -5,6 +5,7 @@ use std::io::prelude::*;
 use std::path::PathBuf;
 
 use crypto::{digest::Digest, sha1::Sha1};
+use derive_more::Display;
 use flate2::{write::ZlibEncoder, Compression};
 use log::error;
 use rand::prelude::*;
@@ -24,33 +25,12 @@ impl fmt::Display for ObjectKind {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Display)]
 pub enum DbError {
+    #[display(fmt = "Serialization error: {}", e.description())]
     SerializeError(Error),
-    IoError(std::io::Error),
-}
-
-// #[derive(Debug, Display)]
-// pub enum DbError {
-//     #[display(fmt = "Serialization error: {}", e.description())]
-//     SerializeError(Error),
-//     #[display(fmt  =" error: {}", e.description())]
-//     IoError(std::io::Error),
-// }
-
-impl StdError for DbError {
-    fn description(&self) -> &str {
-        format!("{}", *self).as_str()
-    }
-}
-
-impl fmt::Display for DbError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            DbError::SerializeError(e) => write!(f, "Serialization error: {}", e.description()),
-            DbError::IoError(io) => write!(f, "Io error: {}", io.description()),
-        }
-    }
+    #[display(fmt = "IO error: {}", e.description())]
+    IoError(Error),
 }
 
 pub struct Database {
@@ -65,7 +45,7 @@ where
     E: Into<Error>,
 {
     fn otype(&self) -> ObjectKind;
-    fn serialize(&self) -> SerializeResult<Vec<u8>>;
+    fn serialize(&mut self) -> SerializeResult<Vec<u8>>;
 }
 
 impl Database {
@@ -73,13 +53,15 @@ impl Database {
         Database { path }
     }
 
-    pub fn store<T, E>(&self, object: T) -> Result<(), DbError>
+    pub fn store<T, E>(&self, mut object: T) -> Result<(), DbError>
     where
         T: Store<E>,
         E: Into<Error>,
     {
         let otype = object.otype().clone();
-        let data = object.serialize().map_err(|serializiation_err| DbError::SerializeError(serializiation_err.into()))?;
+        let data = object
+            .serialize()
+            .map_err(|serializiation_err| DbError::SerializeError(serializiation_err.into()))?;
 
         let mut content = format!("{} {}\0", otype, data.len()).into_bytes();
 
@@ -91,14 +73,14 @@ impl Database {
         // Not actualy a Result<String, Error>, just a String
         let oid = hasher.result_str();
 
-        self.write_object(oid, &content)
+        self.write_object(&oid, &content)
             .map_err(|write_err| DbError::IoError(write_err))
     }
 
     fn write_object(&self, oid: &str, content: &[u8]) -> Result<(), Error> {
-        let (object_path, dirname, temp_path) = destructure_oid(oid);
+        let (object_path, dirname, temp_path) = self.destructure(oid);
 
-        if (path_exists(dirname).is_err()) {
+        if path_exists(&dirname) {
             fs::create_dir_all(dirname)?;
         }
 
@@ -106,28 +88,37 @@ impl Database {
             .write(true)
             .read(true)
             .create(true)
-            .open(temp_path.clone()) {
-                Ok(file) => {
-                    let mut e = ZlibEncoder::new(Vec::new(), Compression::fast());
+            .open(temp_path.clone())
+        {
+            Ok(mut file) => {
+                let mut e = ZlibEncoder::new(Vec::new(), Compression::fast());
 
-                    e.write_all(content)?;
-                    let compressed = e.finish()?;
+                e.write_all(content)?;
+                let compressed = e.finish()?;
 
-                    file.write(&compressed)?;
-                    file.sync_all()?;
+                file.write(&compressed)?;
+                file.sync_all()?;
 
-                    fs::rename(temp_path, object_path)?;
-                    Ok(())
-                },
-                Err(err) => {
-                    error!("Error opening file: {}", err);
-
-                    Err(err)
-                }
+                fs::rename(temp_path, object_path)?;
+                Ok(())
             }
+            Err(err) => {
+                error!("Error opening file: {}", err);
+
+                Err(Box::new(err))
+            }
+        }
+    }
+
+    fn destructure(&self, oid: &str) -> (PathBuf, PathBuf, PathBuf) {
+        let object_path = self.path.join(&oid[0..2]);
+        let object_path = object_path.join(&oid[2..]);
+        let dirname = self.path.join(&oid[0..2]);
+        let temp_path = dirname.join(generate_temp_name());
+
+        (object_path, dirname, temp_path)
     }
 }
-
 
 fn generate_temp_name() -> String {
     let rand_name: [char; 6] = thread_rng().gen();
@@ -135,19 +126,11 @@ fn generate_temp_name() -> String {
     format!("tmp_obj_{:?}", rand_name)
 }
 
-fn destructure(oid: &str) -> () {
-    let object_path = self.path.join(&oid[0..2]);
-    let object_path = object_path.join(&oid[2..]);
-    let dirname = self.path.join(&oid[0..2]);
-    let temp_path = dirname.join(self.generate_temp_name());
-
-    (object_path, dirname, temp_path)
-}
-
-fn checkPath(path: PathBuf) -> bool {
+// TODO: Handle permission errors
+fn path_exists(path: &PathBuf) -> bool {
     if let Ok(_) = fs::metadata(path) {
         true
+    } else {
+        false
     }
-
-    false
 }

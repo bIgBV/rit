@@ -39,7 +39,7 @@ impl Store<BlobError> for Blob {
         self.otype
     }
 
-    fn serialize(&self) -> SerializeResult<Vec<u8>> {
+    fn serialize(&mut self) -> SerializeResult<Vec<u8>> {
         Ok(self.data.clone())
     }
 }

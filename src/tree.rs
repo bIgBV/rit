@@ -42,14 +42,14 @@ impl<'a> Store<TreeError> for Tree<'a> {
         self.otype
     }
 
-    fn serialize(&self) -> SerializeResult<Vec<u8>> {
+    fn serialize(&mut self) -> SerializeResult<Vec<u8>> {
         self.entries[..].sort_by_key(|entry| entry.name);
-        
-        self
+
+        Ok(self
             .entries
             .iter()
             .map(|entry| format!("{:<7}{}\0{}", MODE, entry.name.display(), entry.oid))
             .collect::<String>()
-            .into_bytes()
+            .into_bytes())
     }
 }

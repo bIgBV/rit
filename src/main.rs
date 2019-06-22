@@ -17,7 +17,7 @@ use tree::Tree;
 use workspace::Workspace;
 
 type Error = Box<dyn std::error::Error>;
-const APP_NAME: &'static str = env!('CARGO_PKG_NAME');
+const APP_NAME: &'static str = env!("CARGO_PKG_NAME");
 
 fn run_app() -> Result<(), Error> {
     let args = env::args();
@@ -41,30 +41,34 @@ fn run_app() -> Result<(), Error> {
             let workspace = Workspace::new(cur_dir);
             let database = Database::new(db_dir);
 
-            let entries = workspace.list_files()?
-                .iter()
-                .filter(|path| path.is_dir())
-                .map(|path| {
+            let mut entries = vec![];
+
+            for path in workspace.list_files()?.iter() {
+                if !path.is_dir() {
                     info!("Handling path: {:?}", path);
 
                     let data = workspace.read_file(path.to_path_buf())?;
                     let blob = Blob::new(data);
 
+                    let oid = blob.oid.clone();
+
                     // Don't do side-effects in map if you can help it
                     database.store(blob);
-                    Entry::new(path, blob.oid);
-                })
-                .filter_map(Result::ok)
-                .collect();
+                    entries.push(Entry::new(&path, oid));
+                }
+            }
 
             let tree = Tree::new(entries);
 
-            database.store(tree);
-
             info!("Tree: {}", tree.oid);
+            database.store(tree);
         }
         Some(val) => {
-            eprintln!("{appname}: {} is not a {appname} command", val, appname = APP_NAME);
+            eprintln!(
+                "{appname}: {} is not a {appname} command",
+                val,
+                appname = APP_NAME
+            );
         }
         _ => eprintln!("Please pass a command"),
     }
