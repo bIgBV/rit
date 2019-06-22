@@ -27,7 +27,7 @@ impl Workspace {
                 let path = entry.path();
                 if self
                     .ingore
-                    .contains(&path.strip_prefix(self.path.clone()).unwrap().to_path_buf())
+                    .contains(&path.strip_prefix(&self.path).unwrap().to_path_buf())
                 {
                     info!("Ignoring path: {:?}", path);
                     continue;
@@ -35,9 +35,10 @@ impl Workspace {
 
                 if !self
                     .ingore
-                    .contains(&path.strip_prefix(self.path.clone()).unwrap().to_path_buf())
+                    .contains(&path.strip_prefix(&self.path).unwrap().to_path_buf())
                     && path.is_dir()
                 {
+                    // Recurse if path is a directory
                     self.read_files(&path, cb)?;
                 } else {
                     cb(&entry);

@@ -16,7 +16,7 @@ use entry::Entry;
 use tree::Tree;
 use workspace::Workspace;
 
-type Error = Box<dyn std::error::Error>;
+pub type Error = Box<dyn std::error::Error>;
 const APP_NAME: &'static str = env!("CARGO_PKG_NAME");
 
 fn run_app() -> Result<(), Error> {
@@ -41,27 +41,30 @@ fn run_app() -> Result<(), Error> {
             let workspace = Workspace::new(cur_dir);
             let database = Database::new(db_dir);
 
-            let mut entries = vec![];
+            let paths = workspace.list_files()?;
 
-            for path in workspace.list_files()?.iter() {
-                if !path.is_dir() {
-                    info!("Handling path: {:?}", path);
+            let blobs: Vec<Blob> = paths
+                .iter()
+                .map(|path| workspace.read_file(path.to_path_buf()))
+                .filter_map(Result::ok)
+                .map(Blob::new)
+                .collect();
 
-                    let data = workspace.read_file(path.to_path_buf())?;
-                    let blob = Blob::new(data);
-
+            let entries = paths
+                .iter()
+                .zip(blobs.into_iter())
+                .map(|(path, blob)| {
                     let oid = blob.oid.clone();
+                    database.store(blob).expect("Unable to serialize blob");
 
-                    // Don't do side-effects in map if you can help it
-                    database.store(blob);
-                    entries.push(Entry::new(&path, oid));
-                }
-            }
+                    Entry::new(path, oid)
+                })
+                .collect();
 
             let tree = Tree::new(entries);
 
             info!("Tree: {}", tree.oid);
-            database.store(tree);
+            database.store(tree)?;
         }
         Some(val) => {
             eprintln!(

@@ -3,6 +3,8 @@ use crate::database::{ObjectKind, SerializeResult, Store};
 use std::error::Error;
 use std::fmt;
 
+use derive_more::Display;
+
 pub struct Blob {
     pub data: Vec<u8>,
     pub oid: String,
@@ -19,20 +21,10 @@ impl Blob {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Display)]
 pub enum BlobError {}
 
-impl fmt::Display for BlobError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "BlobError")
-    }
-}
-
-impl Error for BlobError {
-    fn description(&self) -> &str {
-        "Unable to serialize Blob"
-    }
-}
+impl Error for BlobError {}
 
 impl Store<BlobError> for Blob {
     fn otype(&self) -> ObjectKind {

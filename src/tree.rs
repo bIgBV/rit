@@ -4,6 +4,8 @@ use crate::entry::Entry;
 use std::error::Error;
 use std::fmt;
 
+use derive_more::Display;
+
 const MODE: &str = "100644";
 
 pub struct Tree<'a> {
@@ -22,20 +24,10 @@ impl<'a> Tree<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Display)]
 pub enum TreeError {}
 
-impl fmt::Display for TreeError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Unable to serialize tree")
-    }
-}
-
-impl Error for TreeError {
-    fn description(&self) -> &str {
-        "Unable to serialize Tree"
-    }
-}
+impl Error for TreeError {}
 
 impl<'a> Store<TreeError> for Tree<'a> {
     fn otype(&self) -> ObjectKind {

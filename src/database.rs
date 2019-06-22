@@ -1,4 +1,5 @@
-use std::error::Error as StdError;
+use crate::Error;
+
 use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::prelude::*;
@@ -33,11 +34,12 @@ pub enum DbError {
     IoError(Error),
 }
 
+impl std::error::Error for DbError {}
+
 pub struct Database {
     path: PathBuf,
 }
 
-type Error = Box<dyn std::error::Error>;
 pub type SerializeResult<T> = Result<T, Error>;
 
 pub trait Store<E>
